@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2005, James Vega
+# Copyright (c) 2009 Michael Tughan
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,8 +28,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###
 
-import plugin
-
 import supybot.conf as conf
 import supybot.utils as utils
 import supybot.registry as registry
@@ -39,34 +38,26 @@ def configure(advanced):
     # user or not.  You should effect your configuration by manipulating the
     # registry as appropriate.
     from supybot.questions import expect, anything, something, yn
-    conf.registerPlugin('Weather', True)
+    conf.registerPlugin('WunderWeather', True)
 
-class WeatherUnit(registry.String):
-    def setValue(self, s):
-        s = s.capitalize()
-        if s not in plugin.unitAbbrevs:
-            raise registry.InvalidRegistryValue,\
-                  'Unit must be one of Fahrenheit, Celsius, or Kelvin.'
-        s = plugin.unitAbbrevs[s]
-        registry.String.setValue(self, s)
+WunderWeather = conf.registerPlugin('WunderWeather')
+conf.registerChannelValue(WunderWeather, 'imperial',
+    registry.Boolean(True, """Shows imperial formatted data (Fahrenheit, miles/hour)
+    in the weather output if true. You can have both imperial and metric enabled,
+    and the bot will show both."""))
+conf.registerChannelValue(WunderWeather, 'metric',
+    registry.Boolean(True, """Shows metric formatted data (Celsius, kilometres/hour)
+    in the weather output if true. You can have both imperial and metric enabled,
+    and the bot will show both."""))
+conf.registerChannelValue(WunderWeather, 'showForecast',
+    registry.Boolean(True, """If true, show the forecast along with the current
+    conditions."""))
+conf.registerChannelValue(WunderWeather, 'forecastDays',
+    registry.NonNegativeInteger(0, """Determines how many days the forecast shows.
+    If set to 0, show all days. See showForecast configuration variable to turn off
+    forecast display."""))
 
-class WeatherCommand(registry.OnlySomeStrings):
-    validStrings = plugin.Weather.weatherCommands
-
-Weather = conf.registerPlugin('Weather')
-conf.registerChannelValue(Weather, 'temperatureUnit',
-    WeatherUnit('Fahrenheit', """Sets the default temperature unit to use when
-    reporting the weather."""))
-conf.registerChannelValue(Weather, 'command',
-    WeatherCommand('wunder', """Sets the default command to use when retrieving
-    the weather.  Command must be one of %s.""" %
-    utils.str.commaAndify(plugin.Weather.weatherCommands, And='or')))
-conf.registerChannelValue(Weather, 'convert',
-    registry.Boolean(True, """Determines whether the weather commands will
-    automatically convert weather units to the unit specified in
-    supybot.plugins.Weather.temperatureUnit."""))
-
-conf.registerUserValue(conf.users.plugins.Weather, 'lastLocation',
+conf.registerUserValue(conf.users.plugins.WunderWeather, 'lastLocation',
     registry.String('', ''))
 
 

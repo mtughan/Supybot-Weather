@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2005, James Vega
+# Copyright (c) 2009 Michael Tughan
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,24 +36,13 @@ so don't get your hopes up.  We just report it.
 import supybot
 import supybot.world as world
 
+supybot.authors.mtughan = supybot.Author('Michael Tughan', 'mtughan', 'michaelsprogramming@gmail.com')
+
 # Use this for the version of this plugin.  You may wish to put a CVS keyword
 # in here if you're keeping the plugin in CVS or some similar system.
 __version__ = "%%VERSION%%"
 
-__author__ = supybot.authors.unknown
-
-supybot.authors.mtughan = supybot.Author('Michael Tughan', 'mtughan', 'michaelsprogramming@gmail.com')
-
-# This is a dictionary mapping supybot.Author instances to lists of
-# contributions.
-__contributors__ = {
-    supybot.authors.jamessan: ['cnn', 'wunder', 'wunder.rss',
-                               'temperatureUnit configuration variable',
-                               'convert configuration variable'],
-    supybot.authors.jemfinch: ['weather'],
-    supybot.authors.bwp: ['ham'],
-    supybot.authors.mtughan: ['cnn', 'wunder', 'wunder.rss', 'ham'],
-    }
+__author__ = supybot.authors.mtughan
 
 import config
 import plugin
