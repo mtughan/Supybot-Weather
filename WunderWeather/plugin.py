@@ -32,6 +32,7 @@ import xml.dom.minidom as dom
 
 import supybot.utils as utils
 from supybot.commands import *
+import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
 
@@ -43,19 +44,23 @@ class NoLocation(callbacks.Error):
     pass
 
 class WunderWeather(callbacks.Plugin):
-    """Uses the Wunderground XML API to get weather conditions for a given location.
-    Always gets current conditions, and by default shows a 7-day forecast as well."""
+    """Uses the Wunderground XML API to get weather conditions for a given
+    location. Always gets current conditions, and by default shows a 7-day
+    forecast as well."""
     threaded = True
     def _noLocation():
         raise NoLocation, noLocationError
     _noLocation = staticmethod(_noLocation)
 
-    _weatherCurrentCondsURL = 'http://api.wunderground.com/auto/wui/geo/WXCurrentObXML/index.xml?query=%s'
-    _weatherForecastURL = 'http://api.wunderground.com/auto/wui/geo/ForecastXML/index.xml?query=%s'
+    _weatherCurrentCondsURL = 'http://api.wunderground.com/auto/wui/geo/' \
+                              'WXCurrentObXML/index.xml?query=%s'
+    _weatherForecastURL = 'http://api.wunderground.com/auto/wui/geo/' \
+                          'ForecastXML/index.xml?query=%s'
     def weather(self, irc, msg, args, location):
         """<US zip code | US/Canada city, state | Foreign city, country>
 
-        Returns the approximate weather conditions for a given city from Wunderground.
+        Returns the approximate weather conditions for a given city from
+        Wunderground.
         """
         channel = None
         if irc.isChannel(msg.args[0]):
@@ -64,7 +69,8 @@ class WunderWeather(callbacks.Plugin):
             location = self.userValue('lastLocation', msg.prefix)
         if not location:
             raise callbacks.ArgumentError
-        self.setUserValue('lastLocation', msg.prefix, location, ignoreNoUser=True)
+        self.setUserValue('lastLocation', msg.prefix,
+                          location, ignoreNoUser=True)
         
         # Check for shortforms, because Wunderground will attempt to check
         # for US locations without a full country name.
@@ -72,35 +78,47 @@ class WunderWeather(callbacks.Plugin):
         # checkShortforms may return Unicode characters in the country name.
         # Need Latin 1 for Supybot's URL handlers to work
         webLocation = shortforms.checkShortforms(location)
-        conditions = self._getDom(self._weatherCurrentCondsURL % utils.web.urlquote(webLocation))
-        observationLocation = conditions.getElementsByTagName('observation_location')[0]
+        conditions = self._getDom(self._weatherCurrentCondsURL % 
+                                  utils.web.urlquote(webLocation))
+        observationLocation = conditions.getElementsByTagName(
+                                  'observation_location')[0]
         
         # if there's no city name in the XML, we didn't get a match
         if observationLocation.getElementsByTagName('city')[0].childNodes.length < 1:
-            # maybe the country shortform given conflicts with a state shortform and wasn't replaced before
+            # maybe the country shortform given conflicts with a state
+            # shortform and wasn't replaced before
             webLocation = shortforms.checkConflictingShortforms(location)
             
-            # if no conflicting short names match, we have the same query as before
+            # if no conflicting short names match,
+            # we have the same query as before
             if webLocation == None:
                 self._noLocation()
             
-            conditions = self._getDom(self._weatherCurrentCondsURL % utils.web.urlquote(webLocation))
-            observationLocation = conditions.getElementsByTagName('observation_location')[0]
+            conditions = self._getDom(self._weatherCurrentCondsURL %
+                                      utils.web.urlquote(webLocation))
+            observationLocation = conditions.getElementsByTagName(
+                                      'observation_location')[0]
             
             # if there's still no match, nothing more we can do
             if observationLocation.getElementsByTagName('city')[0].childNodes.length < 1:
                 self._noLocation()
         
+        forecast = self._getDom(self._weatherForecastURL %
+                                utils.web.urlquote(webLocation))
+        
         output = []
         
-        output.append(u'Weather for ' + self._getNodeValue(conditions, 'full', 'Unknown Location'))
+        output.append(u'Weather for ' + self._getNodeValue(conditions, 'full',
+                                                          'Unknown Location'))
         
         output.append(self._getCurrentConditions(conditions, channel))
-        # _getForecast returns a list, so we have to call extend rather than append
-        output.extend(self._getForecast(webLocation, channel))
+        # _getForecast returns a list, so we have to
+        # call extend rather than append
+        output.extend(self._getForecast(forecast, channel))
         
-        # UTF-8 encoding is required for Supybot to handle \xb0 (degrees) and other special chars
-        # We can't (yet) pass it a Unicode string on its own (an oddity, to be sure)
+        # UTF-8 encoding is required for Supybot to handle \xb0 (degrees) and
+        # other special chars. We can't (yet) pass it a Unicode string on its
+        # own (an oddity, to be sure)
         irc.reply(u' | '.join(output).encode('utf-8'))
     weather = wrap(weather, [additional('text')])
     
@@ -109,24 +127,38 @@ class WunderWeather(callbacks.Plugin):
         
         temp = self._formatCurrentConditionTemperatures(dom, 'temp', channel)
         if self._getNodeValue(dom, 'heat_index_string') != 'NA':
-            temp += u' (Heat Index: %s)' % self._formatCurrentConditionTemperatures(dom, 'heat_index', channel)
+            temp += u' (Heat Index: %s)' %
+                self._formatCurrentConditionTemperatures(dom, 'heat_index',
+                                                         channel)
         if self._getNodeValue(dom, 'windchill_string') != 'NA':
-            temp += u' (Wind Chill: %s)' % self._formatCurrentConditionTemperatures(dom, 'windchill', channel)
+            temp += u' (Wind Chill: %s)' %
+                self._formatCurrentConditionTemperatures(dom, 'windchill',
+                                                         channel)
         output.append(u'Temperature: ' + temp)
         
-        output.append(u'Humidity: ' + self._getNodeValue(dom, 'relative_humidity', u'N/A%'))
-        output.append(u'Pressure: ' + self._formatPressures(dom, channel))
-        output.append(u'Conditions: ' + self._getNodeValue(dom, 'weather'))
-        output.append(u'Wind Direction: ' + self._getNodeValue(dom, 'wind_dir', u'None'))
-        output.append(u'Wind Speed: ' + self._formatSpeeds(dom, 'wind_mph', channel))
-        output.append(u'Updated: ' + self._getNodeValue(dom, 'observation_time').lstrip(u'Last Updated on '))
+        output.append(u'Humidity: ' +
+            self._getNodeValue(dom, 'relative_humidity', u'N/A%'))
+        
+        output.append(u'Pressure: ' +
+            self._formatPressures(dom, channel))
+        
+        output.append(u'Conditions: ' +
+            self._getNodeValue(dom, 'weather'))
+        
+        output.append(u'Wind Direction: ' +
+            self._getNodeValue(dom, 'wind_dir', u'None'))
+        
+        output.append(u'Wind Speed: ' +
+            self._formatSpeeds(dom, 'wind_mph', channel))
+        
+        output.append(u'Updated: ' +
+            self._getNodeValue(dom, 'observation_time').lstrip(u'Last Updated on '))
+        
         return u'; '.join(output)
     
-    def _getForecast(self, location, channel):
+    def _getForecast(self, dom, channel):
         if not self.registryValue('showForecast'):
             return []
-        
-        dom = self._getDom(self._weatherForecastURL % utils.web.urlquote(location))
         output = []
         count = 0
         max = self.registryValue('forecastDays', channel)
@@ -162,12 +194,15 @@ class WunderWeather(callbacks.Plugin):
     def _formatSpeeds(self, dom, string, channel):
         mphValue = float(self._getNodeValue(dom, string, u'0'))
         speedM = u'%dmph' % round(mphValue)
-        speedK = u'%dkm/h' % round(mphValue * 1.609344) # thanks Wikipedia for the conversion rate
+        # thanks Wikipedia for the conversion rate for miles -> km/h
+        speedK = u'%dkm/h' % round(mphValue * 1.609344)
         return self._formatForMetricOrImperial(speedM, speedK, channel)
     
     def _formatPressures(self, dom, channel):
-        # lots of function calls, but it just divides pressure_mb by 10 and rounds it
-        pressureKpa = str(round(float(self._getNodeValue(dom, 'pressure_mb', u'0')) / 10, 1)) + 'kPa'
+        # lots of function calls, but it just divides pressure_mb by 10
+        # and rounds it to change hPa into kPa
+        pressureKpa = str(round(float(self._getNodeValue(dom, 'pressure_mb',
+                                          u'0')) / 10, 1)) + 'kPa'
         pressureIn = self._getNodeValue(dom, 'pressure_in', u'0') + 'in'
         return self._formatForMetricOrImperial(pressureIn, pressureKpa, channel)
     
