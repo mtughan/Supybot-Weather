@@ -237,6 +237,3 @@ class WunderWeather(callbacks.Plugin):
     _getNodeValue = staticmethod(_getNodeValue)
 
 Class = WunderWeather
-
-
-# vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
