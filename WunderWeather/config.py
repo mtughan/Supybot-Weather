@@ -49,11 +49,11 @@ conf.registerChannelValue(WunderWeather, 'metric',
     registry.Boolean(True, """Shows metric formatted data (Celsius, kilometres/hour)
     in the weather output if true. You can have both imperial and metric enabled,
     and the bot will show both."""))
-conf.registerChannelValue(WunderWeather, 'showForecast',
-    registry.Boolean(True, """If true, show the forecast along with the current
-    conditions."""))
+conf.registerChannelValue(WunderWeather, 'showPressure',
+    registry.Boolean(True, """Determines whether the bot will show pressures in its
+    output. The type of pressure shown will depend on the metric/imperial settings."""))
 conf.registerChannelValue(WunderWeather, 'forecastDays',
-    registry.NonNegativeInteger(0, """Determines how many days the forecast shows.
+    registry.NonNegativeInteger(0, """Determines how many days the forecast shows, up to 7.
     If set to 0, show all days. See showForecast configuration variable to turn off
     forecast display."""))
 

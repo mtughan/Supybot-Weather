@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2005, James Vega
-# Copyright (c) 2009, Michael Tughan
+# Copyright (c) 2009, 2010 Michael Tughan
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,8 +31,7 @@
 import xml.dom.minidom as dom
 
 import supybot.utils as utils
-from supybot.commands import *
-import supybot.ircutils as ircutils
+from supybot.commands import wrap
 import supybot.callbacks as callbacks
 
 import shortforms
@@ -46,25 +45,74 @@ class WunderWeather(callbacks.Plugin):
     """Uses the Wunderground XML API to get weather conditions for a given location.
     Always gets current conditions, and by default shows a 7-day forecast as well."""
     threaded = True
-    def _noLocation():
-        raise NoLocation, noLocationError
-    _noLocation = staticmethod(_noLocation)
-
+    
+    
+    ##########    GLOBAL VARIABLES    ##########
+    
     _weatherCurrentCondsURL = 'http://api.wunderground.com/auto/wui/geo/WXCurrentObXML/index.xml?query=%s'
     _weatherForecastURL = 'http://api.wunderground.com/auto/wui/geo/ForecastXML/index.xml?query=%s'
+    
+    
+    ##########    EXPOSED METHODS    ##########
+    
     def weather(self, irc, msg, args, location):
         """<US zip code | US/Canada city, state | Foreign city, country>
 
         Returns the approximate weather conditions for a given city from Wunderground.
         """
-        channel = None
-        if irc.isChannel(msg.args[0]):
-            channel = msg.args[0]
+        matchedLocation = self._commandSetup(irc, msg, location)
+        
+        output = []
+        
+        output.append(u'Weather for ' + self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location'))
+        
+        output.append(self._getCurrentConditions(matchedLocation[0]))
+        # _getForecast returns a list, so we have to call extend rather than append
+        output.extend(self._getForecast(matchedLocation[1]))
+        
+        irc.reply(self._formatUnicodeOutput(output))
+    weather = wrap(weather, [additional('text')])
+    
+    def current(self, irc, msg, args, location):
+        """<US zip code | US/Canada city, state | Foreign city, country>
+
+        Returns the approximate current weather conditions for a given city from Wunderground.
+        """
+        matchedLocation = self._commandSetup(irc, msg, location)
+        
+        output = []
+        output.append(u'Current weather for ' + self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location'))
+        output.append(self._getCurrentConditions(matchedLocation[0]))
+        
+        irc.reply(self._formatUnicodeOutput(output))
+    current = wrap(current, [additional('text')])
+    
+    def forecast(self, irc, msg, args, location):
+        """<US zip code | US/Canada city, state | Foreign city, country>
+
+        Returns the approximate forecast for a given city from Wunderground.
+        """
+        matchedLocation = self._commandSetup(irc, msg, location)
+        
+        output = []
+        output.append(u'Forecast for ' + self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location'))
+        # _getForecast returns a list, so we have to call extend rather than append
+        output.extend(self._getForecast(matchedLocation[1]))
+        
+        output.append(u'Updated: ' + self._formatUpdatedTime(dom))
+        
+        irc.reply(self._formatUnicodeOutput(output))
+    forecast = wrap(forecast, [additional('text')])
+    
+    
+    ##########    SUPPORTING METHODS    ##########
+    
+    def _checkLocation(self, location):
         if not location:
-            location = self.userValue('lastLocation', msg.prefix)
+            location = self.userValue('lastLocation', self.__msg.prefix)
         if not location:
             raise callbacks.ArgumentError
-        self.setUserValue('lastLocation', msg.prefix, location, ignoreNoUser=True)
+        self.setUserValue('lastLocation', self.__msg.prefix, location, ignoreNoUser=True)
         
         # Check for shortforms, because Wunderground will attempt to check
         # for US locations without a full country name.
@@ -82,53 +130,147 @@ class WunderWeather(callbacks.Plugin):
             
             # if no conflicting short names match, we have the same query as before
             if webLocation == None:
-                self._noLocation()
+                return None
             
             conditions = self._getDom(self._weatherCurrentCondsURL % utils.web.urlquote(webLocation))
             observationLocation = conditions.getElementsByTagName('observation_location')[0]
             
             # if there's still no match, nothing more we can do
             if observationLocation.getElementsByTagName('city')[0].childNodes.length < 1:
-                self._noLocation()
+                return None
         
-        output = []
-        
-        output.append(u'Weather for ' + self._getNodeValue(conditions, 'full', 'Unknown Location'))
-        
-        output.append(self._getCurrentConditions(conditions, channel))
-        # _getForecast returns a list, so we have to call extend rather than append
-        output.extend(self._getForecast(webLocation, channel))
-        
-        # UTF-8 encoding is required for Supybot to handle \xb0 (degrees) and other special chars
-        # We can't (yet) pass it a Unicode string on its own (an oddity, to be sure)
-        irc.reply(u' | '.join(output).encode('utf-8'))
-    weather = wrap(weather, [additional('text')])
+        # if we get this far, we got a match. Return the DOM and location
+        return (conditions, webLocation)
     
-    def _getCurrentConditions(self, dom, channel):
+    def _commandSetup(self, irc, msg, location):
+        channel = None
+        if irc.isChannel(msg.args[0]):
+            channel = msg.args[0]
+        
+        # set various variables for submethods use
+        self.__irc = irc
+        self.__msg = msg
+        self.__channel = channel
+        
+        matchedLocation = self._checkLocation(location)
+        if not matchedLocation:
+            self._noLocation()
+        
+        return matchedLocation
+    
+    # format temperatures using _formatForMetricOrImperial
+    def _formatCurrentConditionTemperatures(self, dom, string):
+        tempC = self._getNodeValue(dom, string + '_c', u'N/A') + u'\xb0C'
+        tempF = self._getNodeValue(dom, string + '_f', u'N/A') + u'\xb0F'
+        return self._formatForMetricOrImperial(tempF, tempC)
+    
+    def _formatForecastTemperatures(self, dom, type):
+        tempC = self._getNodeValue(dom.getElementsByTagName(type)[0], 'celsius', u'N/A') + u'\xb0C'
+        tempF = self._getNodeValue(dom.getElementsByTagName(type)[0], 'fahrenheit', u'N/A') + u'\xb0F'
+        return self._formatForMetricOrImperial(tempF, tempC)
+    
+    # formats any imperial or metric values according to the config
+    def _formatForMetricOrImperial(self, imperial, metric):
+        returnValues = []
+        
+        if self.registryValue('imperial', self.__channel):
+            returnValues.append(imperial)
+        if self.registryValue('metric', self.__channel):
+            returnValues.append(metric)
+        
+        if not returnValues:
+            returnValues = (imperial, metric)
+        
+        return u' / '.join(returnValues)
+    
+    def _formatPressures(self, dom):
+        # lots of function calls, but it just divides pressure_mb by 10 and rounds it
+        pressureKpa = str(round(float(self._getNodeValue(dom, 'pressure_mb', u'0')) / 10, 1)) + 'kPa'
+        pressureIn = self._getNodeValue(dom, 'pressure_in', u'0') + 'in'
+        return self._formatForMetricOrImperial(pressureIn, pressureKpa)
+    
+    def _formatSpeeds(self, dom, string):
+        mphValue = float(self._getNodeValue(dom, string, u'0'))
+        speedM = u'%dmph' % round(mphValue)
+        speedK = u'%dkph' % round(mphValue * 1.609344) # thanks Wikipedia for the conversion rate
+        return self._formatForMetricOrImperial(speedM, speedK)
+    
+    def _formatUpdatedTime(self, dom):
+        observationTime = self._getNodeValue(dom, 'observation_epoch', None)
+        localTime = self._getNodeValue(dom, 'local_epoch', None)
+        if not observationTime or not localTime:
+            return self._getNodeValue(dom, 'observation_time', 'Unknown Time').lstrip(u'Last Updated on ')
+        
+        seconds = int(localTime) - int(observationTime)
+        minutes = int(seconds / 60)
+        seconds -= minutes * 60
+        hours = int(minutes / 60)
+        minutes -= hours * 60
+        
+        if seconds == 1:
+            seconds = '1 sec'
+        else:
+            seconds = '%d secs' % seconds
+        
+        if minutes == 1:
+            minutes = '1 min'
+        else:
+            minutes = '%d mins' % minutes
+        
+        if hours == 1:
+            hours = '1 hr'
+        else:
+            hours = '%d hrs' % hours
+        
+        if hours == '0 hrs':
+            if minutes == '0 mins':
+                return '%s ago' % seconds
+            return '%s, %s ago' % (minutes, seconds)
+        return '%s, %s, %s ago' % (hours, minutes, seconds)
+    
+    def _getCurrentConditions(self, dom):
         output = []
         
-        temp = self._formatCurrentConditionTemperatures(dom, 'temp', channel)
+        temp = self._formatCurrentConditionTemperatures(dom, 'temp')
         if self._getNodeValue(dom, 'heat_index_string') != 'NA':
-            temp += u' (Heat Index: %s)' % self._formatCurrentConditionTemperatures(dom, 'heat_index', channel)
+            temp += u' (Heat Index: %s)' % self._formatCurrentConditionTemperatures(dom, 'heat_index')
         if self._getNodeValue(dom, 'windchill_string') != 'NA':
-            temp += u' (Wind Chill: %s)' % self._formatCurrentConditionTemperatures(dom, 'windchill', channel)
+            temp += u' (Wind Chill: %s)' % self._formatCurrentConditionTemperatures(dom, 'windchill')
         output.append(u'Temperature: ' + temp)
         
         output.append(u'Humidity: ' + self._getNodeValue(dom, 'relative_humidity', u'N/A%'))
-        output.append(u'Pressure: ' + self._formatPressures(dom, channel))
+        if self.registryValue('showPressure', self.__channel):
+            output.append(u'Pressure: ' + self._formatPressures(dom))
         output.append(u'Conditions: ' + self._getNodeValue(dom, 'weather').capitalize())
-        output.append(u'Wind: ' + self._getNodeValue(dom, 'wind_dir', u'None').capitalize() + ', ' + self._formatSpeeds(dom, 'wind_mph', channel))
-        output.append(u'Updated: ' + self._getNodeValue(dom, 'observation_time').lstrip(u'Last Updated on '))
+        output.append(u'Wind: ' + self._getNodeValue(dom, 'wind_dir', u'None').capitalize() + ', ' + self._formatSpeeds(dom, 'wind_mph'))
+        output.append(u'Updated: ' + self._formatUpdatedTime(dom))
         return u'; '.join(output)
     
-    def _getForecast(self, location, channel):
-        if not self.registryValue('showForecast'):
-            return []
-        
+    def _getDom(self, url):
+        if 'WXCurrentObXML' in url:
+            current = open('/Users/mtughan/current.xml')
+            currentXML = current.read()
+            current.close()
+            return dom.parseString(currentXML)
+        else:
+            forecast = open('/Users/mtughan/forecast.xml')
+            forecastXML = forecast.read()
+            forecast.close()
+            return dom.parseString(forecastXML)
+        try:
+            xmlString = utils.web.getUrl(url)
+            return dom.parseString(xmlString)
+        except utils.web.Error, e:
+            error = e.args[0].capitalize()
+            if error[-1] != '.':
+                error = error + '.'
+            self.__irc.error(error, Raise=True)
+    
+    def _getForecast(self, location):
         dom = self._getDom(self._weatherForecastURL % utils.web.urlquote(location))
         output = []
         count = 0
-        max = self.registryValue('forecastDays', channel)
+        max = self.registryValue('forecastDays', self.__channel)
         
         forecast = dom.getElementsByTagName('simpleforecast')[0]
         
@@ -138,55 +280,21 @@ class WunderWeather(callbacks.Plugin):
             forecastOutput = []
             
             forecastOutput.append('Forecast for ' + self._getNodeValue(day, 'weekday').capitalize() + ': ' + self._getNodeValue(day, 'conditions').capitalize())
-            forecastOutput.append('High of ' + self._formatForecastTemperatures(day, 'high', channel))
-            forecastOutput.append('Low of ' + self._formatForecastTemperatures(day, 'low', channel))
+            forecastOutput.append('High of ' + self._formatForecastTemperatures(day, 'high'))
+            forecastOutput.append('Low of ' + self._formatForecastTemperatures(day, 'low'))
             output.append('; '.join(forecastOutput))
             count += 1
+        
         return output
     
     
-    # format temperatures using _formatForMetricOrImperial
-    def _formatCurrentConditionTemperatures(self, dom, string, channel):
-        tempC = self._getNodeValue(dom, string + '_c', u'N/A') + u'\xb0C'
-        tempF = self._getNodeValue(dom, string + '_f', u'N/A') + u'\xb0F'
-        return self._formatForMetricOrImperial(tempF, tempC, channel)
+    ##########    STATIC METHODS    ##########
     
-    def _formatForecastTemperatures(self, dom, type, channel):
-        tempC = self._getNodeValue(dom.getElementsByTagName(type)[0], 'celsius', u'N/A') + u'\xb0C'
-        tempF = self._getNodeValue(dom.getElementsByTagName(type)[0], 'fahrenheit', u'N/A') + u'\xb0F'
-        return self._formatForMetricOrImperial(tempF, tempC, channel)
-    
-    def _formatSpeeds(self, dom, string, channel):
-        mphValue = float(self._getNodeValue(dom, string, u'0'))
-        speedM = u'%dmph' % round(mphValue)
-        speedK = u'%dkm/h' % round(mphValue * 1.609344) # thanks Wikipedia for the conversion rate
-        return self._formatForMetricOrImperial(speedM, speedK, channel)
-    
-    def _formatPressures(self, dom, channel):
-        # lots of function calls, but it just divides pressure_mb by 10 and rounds it
-        pressureKpa = str(round(float(self._getNodeValue(dom, 'pressure_mb', u'0')) / 10, 1)) + 'kPa'
-        pressureIn = self._getNodeValue(dom, 'pressure_in', u'0') + 'in'
-        return self._formatForMetricOrImperial(pressureIn, pressureKpa, channel)
-    
-    # formats any imperial or metric values according to the config
-    def _formatForMetricOrImperial(self, imperial, metric, channel):
-        showM = self.registryValue('metric', channel)
-        showI = self.registryValue('imperial', channel)
-        returnValues = []
-        
-        if showI:
-            returnValues.append(imperial)
-        if showM:
-            returnValues.append(metric)
-        
-        if returnValues == []:
-            returnValues = (imperial, metric)
-        
-        return u' / '.join(returnValues)
-    
-    def _getDom(self, url):
-        xmlString = utils.web.getUrl(url)
-        return dom.parseString(xmlString)
+    def _formatUnicodeOutput(output):
+        # UTF-8 encoding is required for Supybot to handle \xb0 (degrees) and other special chars
+        # We can't (yet) pass it a Unicode string on its own (an oddity, to be sure)
+        return u' | '.join(output).encode('utf-8')
+    _formatUnicodeOutput = staticmethod(_formatUnicodeOutput)
     
     def _getNodeValue(dom, value, default=u'Unknown'):
         subTag = dom.getElementsByTagName(value)
@@ -197,6 +305,10 @@ class WunderWeather(callbacks.Plugin):
             return default
         return subTag.nodeValue
     _getNodeValue = staticmethod(_getNodeValue)
+    
+    def _noLocation():
+        raise NoLocation, noLocationError
+    _noLocation = staticmethod(_noLocation)
 
 Class = WunderWeather
 
