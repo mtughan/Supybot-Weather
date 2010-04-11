@@ -247,16 +247,6 @@ class WunderWeather(callbacks.Plugin):
         return u'; '.join(output)
     
     def _getDom(self, url):
-        if 'WXCurrentObXML' in url:
-            current = open('/Users/mtughan/current.xml')
-            currentXML = current.read()
-            current.close()
-            return dom.parseString(currentXML)
-        else:
-            forecast = open('/Users/mtughan/forecast.xml')
-            forecastXML = forecast.read()
-            forecast.close()
-            return dom.parseString(forecastXML)
         try:
             xmlString = utils.web.getUrl(url)
             return dom.parseString(xmlString)
