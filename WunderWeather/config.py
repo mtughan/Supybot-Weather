@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2005, James Vega
-# Copyright (c) 2009 Michael Tughan
+# Copyright (c) 2009-2010 Michael Tughan
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -56,6 +56,12 @@ conf.registerChannelValue(WunderWeather, 'forecastDays',
     registry.NonNegativeInteger(0, """Determines how many days the forecast shows, up to 7.
     If set to 0, show all days. See showForecast configuration variable to turn off
     forecast display."""))
+conf.registerChannelValue(WunderWeather, 'showCurrentByDefault',
+    registry.Boolean(True, """If True, will show the current conditions in the weather
+    output if no ouput control switches are given."""))
+conf.registerChannelValue(WunderWeather, 'showForecastByDefault',
+    registry.Boolean(True, """If True, will show the forecast in the weather
+    output if no ouput control switches are given."""))
 
 conf.registerUserValue(conf.users.plugins.WunderWeather, 'lastLocation',
     registry.String('', ''))

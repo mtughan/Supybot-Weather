@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2005, James Vega
-# Copyright (c) 2009, 2010 Michael Tughan
+# Copyright (c) 2009-2010 Michael Tughan
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,7 @@
 import xml.dom.minidom as dom
 
 import supybot.utils as utils
-from supybot.commands import wrap
+from supybot.commands import wrap, additional
 import supybot.callbacks as callbacks
 
 import shortforms
@@ -55,54 +55,53 @@ class WunderWeather(callbacks.Plugin):
     
     ##########    EXPOSED METHODS    ##########
     
-    def weather(self, irc, msg, args, location):
-        """<US zip code | US/Canada city, state | Foreign city, country>
+    def weather(self, irc, msg, args, options, location):
+        """[--current|--forecast|--all] [US zip code | US/Canada city, state | Foreign city, country]
 
         Returns the approximate weather conditions for a given city from Wunderground.
+        --current, --forecast, and --all control what kind of information the command
+        shows.
         """
         matchedLocation = self._commandSetup(irc, msg, location)
+        locationName = self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location')
         
         output = []
+        showCurrent = False
+        showForecast = False
         
-        output.append(u'Weather for ' + self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location'))
+        if not options:
+            # use default output
+            showCurrent = self.registryValue('showCurrentByDefault', self.__channel)
+            showForecast = self.registryValue('showForecastByDefault', self.__channel)
+        else:
+            for (type, arg) in options:
+                if type == 'current':
+                    showCurrent = True
+                elif type == 'forecast':
+                    showForecast = True
+                elif type == 'all':
+                    showCurrent = True
+                    showForecast = True
         
-        output.append(self._getCurrentConditions(matchedLocation[0]))
-        # _getForecast returns a list, so we have to call extend rather than append
-        output.extend(self._getForecast(matchedLocation[1]))
+        if showCurrent and showForecast:
+            output.append(u'Weather for ' + locationName)
+        elif showCurrent:
+            output.append(u'Current weather for ' + locationName)
+        elif showForecast:
+            output.append(u'Forecast for ' + locationName)
         
-        irc.reply(self._formatUnicodeOutput(output))
-    weather = wrap(weather, [additional('text')])
-    
-    def current(self, irc, msg, args, location):
-        """<US zip code | US/Canada city, state | Foreign city, country>
-
-        Returns the approximate current weather conditions for a given city from Wunderground.
-        """
-        matchedLocation = self._commandSetup(irc, msg, location)
+        if showCurrent:
+            output.append(self._getCurrentConditions(matchedLocation[0]))
         
-        output = []
-        output.append(u'Current weather for ' + self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location'))
-        output.append(self._getCurrentConditions(matchedLocation[0]))
+        if showForecast:
+            # _getForecast returns a list, so we have to call extend rather than append
+            output.extend(self._getForecast(matchedLocation[1]))
         
-        irc.reply(self._formatUnicodeOutput(output))
-    current = wrap(current, [additional('text')])
-    
-    def forecast(self, irc, msg, args, location):
-        """<US zip code | US/Canada city, state | Foreign city, country>
-
-        Returns the approximate forecast for a given city from Wunderground.
-        """
-        matchedLocation = self._commandSetup(irc, msg, location)
-        
-        output = []
-        output.append(u'Forecast for ' + self._getNodeValue(matchedLocation[0], 'full', 'Unknown Location'))
-        # _getForecast returns a list, so we have to call extend rather than append
-        output.extend(self._getForecast(matchedLocation[1]))
-        
-        output.append(u'Updated: ' + self._formatUpdatedTime(dom))
+        if not showCurrent and not showForecast:
+            irc.error("Something weird happened... I'm not supposed to show current conditions or a forecast!")
         
         irc.reply(self._formatUnicodeOutput(output))
-    forecast = wrap(forecast, [additional('text')])
+    weather = wrap(weather, [getopts({'current': '', 'forecast': '', 'all': ''}), additional('text')])
     
     
     ##########    SUPPORTING METHODS    ##########
