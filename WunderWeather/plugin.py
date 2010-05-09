@@ -31,7 +31,7 @@
 import xml.dom.minidom as dom
 
 import supybot.utils as utils
-from supybot.commands import wrap, additional
+from supybot.commands import wrap, additional, getopts
 import supybot.callbacks as callbacks
 
 import shortforms
